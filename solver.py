@@ -1,309 +1,494 @@
-from algorithms import *
-import moves  
-WHITE  = 'W'
-GREEN  = 'G'
-RED    = 'R'
-BLUE   = 'B'
-ORANGE = 'O'
-YELLOW = 'Y'
+# Rubik's Cube Solver: Beginner's Method
 
-WHITE_EDGES = [
-    (WHITE, GREEN),
-    (WHITE, RED),
-    (WHITE, BLUE),
-    (WHITE, ORANGE)
-]
-#to lift bottom layer white edge based on side-colour
-FACE_MAP = {
-    GREEN:  "F",
-    RED:    "R",
-    BLUE:   "B",
-    ORANGE: "L"
+"""
+    Face Mapping Index:
+    0: Up/Top
+    1: Left
+    2: Front
+    3: Right
+    4: Back
+    5: Down/Bottom
+"""
+
+
+import moves
+
+WHITE, GREEN, RED, BLUE, ORANGE, YELLOW = 'W', 'G', 'R', 'B', 'O', 'Y'
+
+MOVE_FN = {
+    'R': moves.turn_R, "R'": moves.turn_R_prime,
+    'L': moves.turn_L, "L'": moves.turn_L_prime,
+    'U': moves.turn_U, "U'": moves.turn_U_prime,
+    'D': moves.turn_D, "D'": moves.turn_D_prime,
+    'F': moves.turn_F, "F'": moves.turn_F_prime,
+    'B': moves.turn_B, "B'": moves.turn_B_prime,
 }
-#temp cube 
+
 def copy_cube(cube):
     return [face[:] for face in cube]
 
-def apply_sequence_to_temp(cube, sequence):
-    for move in sequence.split():
-        apply_virtual_move(cube, move)
+def apply_moves_str(cube, move_str):
+    for m in move_str.split():
+        if m in MOVE_FN:
+            MOVE_FN[m](cube)
 
-def apply_virtual_move(cube, move):
-    if move == 'U':
-        moves.turn_U(cube)
-    elif move == "U'":
-        moves.turn_U_prime(cube)
-    elif move == 'F':
-        moves.turn_F(cube)
-    elif move == "F'":
-        moves.turn_F_prime(cube)
-    elif move == 'R':
-        moves.turn_R(cube)
-    elif move == "R'":
-        moves.turn_R_prime(cube)
-    elif move == 'L':
-        moves.turn_L(cube)
-    elif move == "L'":
-        moves.turn_L_prime(cube)
-    elif move == 'B':
-        moves.turn_B(cube)
-    elif move == "B'":
-        moves.turn_B_prime(cube)
-    elif move == 'D':
-        moves.turn_D(cube)
-    elif move == "D'":
-        moves.turn_D_prime(cube)
+def rotate_z2(cube):
+    # Rotates the cube 180 degrees around the Z axis (Front-Back)
+    # White layer is now on the bottom and the unsolved Yellow layer is on top 
+    cube[0], cube[5] = cube[5][::-1], cube[0][::-1]
+    cube[1], cube[3] = cube[3][::-1], cube[1][::-1]
+    cube[2] = cube[2][::-1]
+    cube[4] = cube[4][::-1]
 
+def map_z2_moves(alg):
+    # Maps moves performed on a Z2-rotated cube back to the unrotated cube
+    m_map = {
+        'U': 'D', "U'": "D'",
+        'D': 'U', "D'": "U'",
+        'F': 'F', "F'": "F'",
+        'B': 'B', "B'": "B'",
+        'L': 'R', "L'": "R'",
+        'R': 'L', "R'": "L'"
+    }
+    return ' '.join(m_map[m] for m in alg.split())
 
-def find_edge(cube, color1, color2):
-    edge_pairs = [
-        ((0, 7), (2, 1)), ((0, 3), (1, 1)),
-        ((0, 1), (4, 1)), ((0, 5), (3, 1)),
-        ((2, 3), (1, 5)), ((1, 3), (4, 5)),
-        ((4, 3), (3, 5)), ((3, 3), (2, 5)),
-        ((2, 7), (5, 1)), ((1, 7), (5, 3)),
-        ((4, 7), (5, 7)), ((3, 7), (5, 5))
+def apply_z2_alg(cube, alg, all_sol):
+    # Applies a standard algorithm to a Z2 rotated cube, mapping the output
+    apply_moves_str(cube, alg)
+    all_sol.append(map_z2_moves(alg))
+
+def find_edge(cube, c1, c2):
+    """
+    Finds the location of an edge piece given its two colors.
+    Returns: ((face1, index1), (face2, index2))
+    """
+    edges = [
+        ((0,1),(4,1)), ((0,3),(1,1)), ((0,5),(3,1)), ((0,7),(2,1)),
+        ((2,3),(1,5)), ((2,5),(3,3)), ((4,3),(3,5)), ((4,5),(1,3)),
+        ((5,1),(2,7)), ((5,3),(1,7)), ((5,5),(3,7)), ((5,7),(4,7))
     ]
-
-    for (f1,i1),(f2,i2) in edge_pairs:
-        c1 = cube[f1][i1]
-        c2 = cube[f2][i2]
-
-        if c1 == color1 and c2 == color2:
-            return (f1, i1)
-        elif c1 == color2 and c2 == color1:
-            return (f2, i2)
-
+    for (f1,i1),(f2,i2) in edges:
+        if (cube[f1][i1] == c1 and cube[f2][i2] == c2) or (cube[f1][i1] == c2 and cube[f2][i2] == c1):
+            return ((f1,i1),(f2,i2))
     return None
-#top-layer
-def is_white_edge_solved(cube, white, side_color):
-    pos = find_edge(cube, white, side_color)
-    if pos is None:
-        return False
 
-    face, _ = pos
-    if face != 0:
-        return False
+def find_corner(cube, c1, c2, c3):
+    """
+    Finds the location of a corner piece given its three colors.
+    Returns: ((face1, index1), (face2, index2), (face3, index3))
+    """
+    corners = [
+        ((0,0),(4,2),(1,0)), ((0,2),(3,2),(4,0)), ((0,6),(1,2),(2,0)), ((0,8),(2,2),(3,0)),
+        ((5,0),(2,6),(1,8)), ((5,2),(3,6),(2,8)), ((5,6),(1,6),(4,8)), ((5,8),(4,6),(3,8))
+    ]
+    target = {c1, c2, c3}
+    for corner in corners:
+        if {cube[f][i] for f,i in corner} == target:
+            return corner
+    return None
 
-    if side_color == GREEN:  return cube[2][4] == GREEN
-    if side_color == RED:    return cube[3][4] == RED
-    if side_color == BLUE:   return cube[4][4] == BLUE
-    if side_color == ORANGE: return cube[1][4] == ORANGE
+# Step 1: Solve White Cross on Top (face 0)
 
-    return False
+def white_edge_solved(cube, side_color):
+    slot = {GREEN: ((0,7),(2,1)), RED: ((0,5),(3,1)),
+            BLUE: ((0,1),(4,1)), ORANGE: ((0,3),(1,1))}
+    (wf,wi),(sf,si) = slot[side_color]
+    return cube[wf][wi] == WHITE and cube[sf][si] == side_color
 
 def solve_white_cross(cube):
-    temp_cube = copy_cube(cube)
-    solution = []
-    for white, side_color in WHITE_EDGES:
-        while not is_white_edge_solved(temp_cube, white, side_color):
-            pos = find_edge(temp_cube, white, side_color)
-            if pos is None:
-                break
-
-            face, _ = pos
-
-            # Case 1: White edge is on bottom
-            if face == 5:
-                 move = FACE_MAP[side_color]
-                 solution.extend([move, move])
-                 apply_virtual_move(temp_cube, move)
-                 apply_virtual_move(temp_cube, move)
-
-            # Case 2: White edge is in middle layer
-            elif face in [1, 2, 3, 4]:
-                solution.append("U")
-                apply_virtual_move(temp_cube, "U")
-
-            # Case 3: White edge is on top but is not aligned
-            elif face == 0:
-                solution.append("U")
-                apply_virtual_move(temp_cube, "U")
-
-    return " ".join(solution)
-def find_corner(cube, color1, color2, color3):
+    c = copy_cube(cube)
+    all_sol = []
     
-    corner_triplets = [
-        # Top Layer
-        ((2, 0), (1, 2), (0, 6)), # Front, Left, Top
-        ((1, 0), (4, 2), (0, 0)), # Left, Back, Top
-        ((4, 0), (3, 2), (0, 2)), # Back, Right, Top
-        ((3, 0), (2, 2), (0, 8)), # Right, Front, Top
+    for sc in [GREEN, ORANGE, BLUE, RED]:
+        if white_edge_solved(c, sc): continue
+        
+        edge = find_edge(c, WHITE, sc)
+        (f1,i1), (f2,i2) = edge
+        if f1 == 0 or f2 == 0:
+            face = f1 if f2 == 0 else f2
+            turn = {2:"F", 3:"R", 4:"B", 1:"L"}[face]
+            seq = f"{turn} {turn}"
+            apply_moves_str(c, seq); all_sol.append(seq)
+            
+        edge = find_edge(c, WHITE, sc)
+        (f1,i1), (f2,i2) = edge
+        if f1 in [1,2,3,4] and f2 in [1,2,3,4]:
+            if (f1, i1) == (2,3) or (f2, i2) == (2,3): # F-L
+                if f1 == 2 and c[f1][i1] == WHITE or f2 == 2 and c[f2][i2] == WHITE:
+                    seq = "F' D F"
+                else: seq = "L D' L'"
+            elif (f1, i1) == (2,5) or (f2, i2) == (2,5): # F-R
+                if f1 == 2 and c[f1][i1] == WHITE or f2 == 2 and c[f2][i2] == WHITE:
+                    seq = "F D' F'"
+                else: seq = "R' D R"
+            elif (f1, i1) == (4,5) or (f2, i2) == (4,5): # B-L
+                if f1 == 4 and c[f1][i1] == WHITE or f2 == 4 and c[f2][i2] == WHITE:
+                    seq = "B D' B'"
+                else: seq = "L' D L"
+            elif (f1, i1) == (4,3) or (f2, i2) == (4,3): # B-R
+                if f1 == 4 and c[f1][i1] == WHITE or f2 == 4 and c[f2][i2] == WHITE:
+                    seq = "B' D B"
+                else: seq = "R D' R'"
+            apply_moves_str(c, seq); all_sol.append(seq)
+                
+        target_face = {GREEN:2, RED:3, BLUE:4, ORANGE:1}[sc]
+        for _ in range(4):
+            edge = find_edge(c, WHITE, sc)
+            (f1,i1), (f2,i2) = edge
+            w_face = f1 if c[f1][i1] == WHITE else f2
+            s_face = f2 if c[f1][i1] == WHITE else f1
+            
+            if w_face == 5 and s_face == target_face:
+                turn = {2:"F", 3:"R", 4:"B", 1:"L"}[target_face]
+                seq = f"{turn} {turn}"
+                apply_moves_str(c, seq); all_sol.append(seq)
+                break
+            elif s_face == 5 and w_face == target_face:
+                if target_face == 2: seq = "F' U' R U"
+                elif target_face == 3: seq = "R' U' B U"
+                elif target_face == 4: seq = "B' U' L U"
+                elif target_face == 1: seq = "L' U' F U"
+                apply_moves_str(c, seq); all_sol.append(seq)
+                break
+            else:
+                apply_moves_str(c, "D"); all_sol.append("D")
+    
+    for i in range(6): cube[i] = c[i]
+    return ' '.join(all_sol)
 
-        # Bottom Layer
-        ((2, 6), (1, 8), (5, 0)), # Front, Left, Down
-        ((1, 6), (4, 8), (5, 6)), # Left, Back, Down
-        ((4, 6), (3, 8), (5, 8)), # Back, Right, Down
-        ((3, 6), (2, 8), (5, 2))  # Right, Front, Down
+
+# Step 2: Solve White Corners on Top
+
+def white_corner_solved(cube, s1, s2):
+    slots = [
+        ((0,6),(1,2),(2,0), ORANGE, GREEN),
+        ((0,8),(2,2),(3,0), GREEN, RED),
+        ((0,2),(3,2),(4,0), RED, BLUE),
+        ((0,0),(4,2),(1,0), BLUE, ORANGE),
     ]
+    for (uf,ui),(af,ai),(bf,bi), sa, sb in slots:
+        if {s1,s2} == {sa,sb}:
+            return (cube[uf][ui] == WHITE and
+                    cube[af][ai] in {s1,s2} and cube[bf][bi] in {s1,s2})
+    return False
 
-    target = {color1, color2, color3}
-    for triplet in corner_triplets:
-        # Co-ords
-        (f1, i1) = triplet[0]
-        (f2, i2) = triplet[1]
-        (f3, i3) = triplet[2]
-
-        col = {cube[f1][i1], cube[f2][i2], cube[f3][i3]}
-
-        if col == target:
-            if cube[f1][i1] == color1: return (f1, i1)
-            if cube[f2][i2] == color1: return (f2, i2)
-            if cube[f3][i3] == color1: return (f3, i3)
-
-    return None
 def solve_white_corners(cube):
-    temp_cube = copy_cube(cube)
-    solution = []
-
-    WHITE_CORNERS = [
-        (WHITE, GREEN, RED),
-        (WHITE, RED, BLUE),
-        (WHITE, BLUE, ORANGE),
-        (WHITE, ORANGE, GREEN)
-    ]
-
-    for colors in WHITE_CORNERS:
-
-        while True:
-            pos =find_corner(temp_cube, *colors)
-            if pos is None:
+    c = copy_cube(cube)
+    all_sol = []
+    
+    corners = [(GREEN, ORANGE), (RED, GREEN), (BLUE, RED), (ORANGE, BLUE)]
+    
+    for (s1, s2) in corners:
+        if white_corner_solved(c, s1, s2): continue
+        
+        corner = find_corner(c, WHITE, s1, s2)
+        faces = [f for f,i in corner]
+        
+        if 0 in faces:
+            if 2 in faces and 3 in faces: seq = "R' D' R"
+            elif 3 in faces and 4 in faces: seq = "B' D' B"
+            elif 4 in faces and 1 in faces: seq = "L' D' L"
+            elif 1 in faces and 2 in faces: seq = "F' D' F"
+            apply_moves_str(c, seq); all_sol.append(seq)
+            
+        f_s1 = {GREEN:2, RED:3, BLUE:4, ORANGE:1}[s1]
+        f_s2 = {GREEN:2, RED:3, BLUE:4, ORANGE:1}[s2]
+        
+        for _ in range(4):
+            corner = find_corner(c, WHITE, s1, s2)
+            faces = [f for f,i in corner]
+            if f_s1 in faces and f_s2 in faces:
                 break
+            apply_moves_str(c, "D"); all_sol.append("D")
+            
+        if {f_s1, f_s2} == {2, 3}:
+            while not white_corner_solved(c, s1, s2):
+                seq = "R' D' R D"
+                apply_moves_str(c, seq); all_sol.append(seq)
+        elif {f_s1, f_s2} == {3, 4}:
+            while not white_corner_solved(c, s1, s2):
+                seq = "B' D' B D"
+                apply_moves_str(c, seq); all_sol.append(seq)
+        elif {f_s1, f_s2} == {4, 1}:
+            while not white_corner_solved(c, s1, s2):
+                seq = "L' D' L D"
+                apply_moves_str(c, seq); all_sol.append(seq)
+        elif {f_s1, f_s2} == {1, 2}:
+            while not white_corner_solved(c, s1, s2):
+                seq = "F' D' F D"
+                apply_moves_str(c, seq); all_sol.append(seq)
+    
+    for i in range(6): cube[i] = c[i]
+    return ' '.join(all_sol)
 
-            face, _ = pos
 
-            # already solved
-            if face == 0:
-                break
+# Step 3: Solve Middle Layer
 
-            # rotate D 
-            solution.append("D")
-            apply_virtual_move(temp_cube, "D")
+def mid_edge_solved(cube, fa, ia, fb, ib):
+    return cube[fa][ia] == cube[fa][4] and cube[fb][ib] == cube[fb][4]
 
-            # right-hand algorithm
-            solution.extend(["R", "U", "R'", "U'"])
-            apply_virtual_move(temp_cube, "R")
-            apply_virtual_move(temp_cube, "U")
-            apply_virtual_move(temp_cube, "R'")
-            apply_virtual_move(temp_cube, "U'")
-
-    return " ".join(solution)
+def second_layer_solved(cube):
+    return (mid_edge_solved(cube, 2,5,3,3) and mid_edge_solved(cube, 2,3,1,5) and
+            mid_edge_solved(cube, 4,5,1,3) and mid_edge_solved(cube, 4,3,3,5))
 
 def solve_second_layer(cube):
-    solution = []
+    c = copy_cube(cube)
+    all_sol = []
+    
+    rotate_z2(c)
     
     right_alg = "U R U' R' U' F' U F"
     left_alg  = "U' L' U L U F U' F'"
+    
+    for _ in range(16):
+        if second_layer_solved(c): break
+        
+        inserted = False
+        for _ in range(4):
+            top = c[0][7] # U-F edge
+            front = c[2][1]
+            if top != YELLOW and front != YELLOW:
+                if front == c[2][4]:
+                    if top == c[3][4]:
+                        apply_z2_alg(c, right_alg, all_sol)
+                        inserted = True; break
+                    elif top == c[1][4]:
+                        apply_z2_alg(c, left_alg, all_sol)
+                        inserted = True; break
+            
+            back = c[4][1] # U-B edge
+            top_b = c[0][1]
+            if top_b != YELLOW and back != YELLOW:
+                if back == c[4][4]:
+                    if top_b == c[3][4]: # Insert U-B to B-R
+                        alg = "U' R' U R U B U' B'"
+                        apply_z2_alg(c, alg, all_sol)
+                        inserted = True; break
+                    elif top_b == c[1][4]: # Insert U-B to B-L
+                        alg = "U L U' L' U' B' U B"
+                        apply_z2_alg(c, alg, all_sol)
+                        inserted = True; break
+                        
+            right = c[3][1] # U-R edge
+            top_r = c[0][5]
+            if top_r != YELLOW and right != YELLOW:
+                if right == c[3][4]:
+                    if top_r == c[2][4]: # Insert U-R to F-R
+                        alg = "U' F' U F U R U' R'"
+                        apply_z2_alg(c, alg, all_sol)
+                        inserted = True; break
+                    elif top_r == c[4][4]: # Insert U-R to B-R
+                        alg = "U B U' B' U' R' U R"
+                        apply_z2_alg(c, alg, all_sol)
+                        inserted = True; break
+                        
+            left = c[1][1] # U-L edge
+            top_l = c[0][3]
+            if top_l != YELLOW and left != YELLOW:
+                if left == c[1][4]:
+                    if top_l == c[2][4]: # Insert U-L to F-L
+                        alg = "U F U' F' U' L' U L"
+                        apply_z2_alg(c, alg, all_sol)
+                        inserted = True; break
+                    elif top_l == c[4][4]: # Insert U-L to B-L
+                        alg = "U' B' U B U L U' L'"
+                        apply_z2_alg(c, alg, all_sol)
+                        inserted = True; break
+                        
+            apply_z2_alg(c, "U", all_sol)
+            
+        if not inserted:
+            mid_edges = [(2,5,3,3), (2,3,1,5), (4,5,1,3), (4,3,3,5)]
+            for fa,ia,fb,ib in mid_edges:
+                if not mid_edge_solved(c, fa, ia, fb, ib):
+                    if fa == 2 and ia == 5:
+                        apply_z2_alg(c, right_alg, all_sol)
+                    elif fa == 2 and ia == 3:
+                        apply_z2_alg(c, left_alg, all_sol)
+                    elif fa == 4 and ia == 3:
+                        apply_z2_alg(c, "U' R' U R U B U' B'", all_sol)
+                    elif fa == 4 and ia == 5:
+                        apply_z2_alg(c, "U L U' L' U' B' U B", all_sol)
+                    break
+                    
+    rotate_z2(c)
+    for i in range(6): cube[i] = c[i]
+    return ' '.join(all_sol)
 
-    for _ in range(16): # Check all edges
-        moved_something = False
-        
-        # Check Front-Up edge (Face 0, Index 7)
-        top_color = cube[0][7]
-        front_color = cube[2][1]
-        
-        if top_color != 'Y' and front_color != 'Y':
-            # This edge belongs in the middle layer!
-            
-            right_center = cube[3][4] # Right face center
-            left_center  = cube[1][4] # Left face center
-            
-            if top_color == right_center:
-                solution.append(right_alg)
-                apply_sequence_to_temp(cube, right_alg)
-                moved_something = True
-            elif top_color == left_center:
-                solution.append(left_alg)
-                apply_sequence_to_temp(cube, left_alg)
-                moved_something = True
-        
-        if not moved_something:
-            # Rotate U to check next edge
-            solution.append("U")
-            apply_virtual_move(cube, "U")
-            
-    return " ".join(solution)
+
+# Step 4: Yellow Cross 
+
+def yellow_cross(cube):
+    return all(cube[0][i] == YELLOW for i in [1,3,5,7])
 
 def solve_yellow_cross(cube):
-    solution = []
+    c = copy_cube(cube)
+    all_sol = []
+    rotate_z2(c)
+    
     alg = "F R U R' U' F'"
     
-    for _ in range(10):
-        # Check Top Face (0) edges: 1, 3, 5, 7
-        e1, e2, e3, e4 = cube[0][7], cube[0][5], cube[0][1], cube[0][3]
-        yellows = sum(1 for c in [e1, e2, e3, e4] if c == 'Y')
+    for _ in range(6):
+        if yellow_cross(c): break
         
-        if yellows == 4:
-            break # Cross solved
+        e = {1: c[0][1]==YELLOW, 3: c[0][3]==YELLOW, 5: c[0][5]==YELLOW, 7: c[0][7]==YELLOW}
+        yc = sum(e.values())
         
-        solution.append(alg)
-        apply_sequence_to_temp(cube, alg)
-        
-        # Check if we need to rotate U to find the pattern
-        if yellows < 4:
-             solution.append("U")
-             apply_virtual_move(cube, "U")
+        if yc == 0:
+            apply_z2_alg(c, alg, all_sol)
+        elif yc == 2:
+            if e[3] and e[5]: # Horizontal line
+                apply_z2_alg(c, alg, all_sol)
+            elif e[1] and e[7]: # Vertical line
+                apply_z2_alg(c, "U", all_sol)
+                apply_z2_alg(c, alg, all_sol)
+            else: # L-shape
+                while not (c[0][1]==YELLOW and c[0][3]==YELLOW):
+                    apply_z2_alg(c, "U", all_sol)
+                apply_z2_alg(c, alg, all_sol)
+        else:
+            apply_z2_alg(c, alg, all_sol)
+            
+    rotate_z2(c)
+    for i in range(6): cube[i] = c[i]
+    return ' '.join(all_sol)
 
-    return " ".join(solution)
+
+# Step 5: Solve Yellow Edge 
+
+def yellow_edges_done(cube):
+    return all(cube[f][1] == cube[f][4] for f in [1,2,3,4])
 
 def solve_yellow_edges(cube):
-    solution = []
+    c = copy_cube(cube)
+    all_sol = []
+    rotate_z2(c)
+    
     alg = "R U R' U R U U R'"
     
-    for _ in range(10):
-        # Check alignment , break if match
-        if cube[2][1] == cube[2][4] and cube[3][1] == cube[3][4] and \
-           cube[4][1] == cube[4][4] and cube[1][1] == cube[1][4]:
-            break
+    for _ in range(12):
+        if yellow_edges_done(c): break
+        
+        matches = [f for f in [1,2,3,4] if c[f][1] == c[f][4]]
+        
+        if len(matches) == 1:
+            rot = {2:0, 3:1, 4:2, 1:3}[matches[0]]
+            for _ in range(rot): apply_z2_alg(c, "U", all_sol)
+            apply_z2_alg(c, alg, all_sol)
+            for _ in range((4 - rot) % 4): apply_z2_alg(c, "U", all_sol)
+        elif len(matches) == 0:
+            apply_z2_alg(c, alg, all_sol)
+        else:
+            apply_z2_alg(c, "U", all_sol)
             
-        solution.append(alg)
-        apply_sequence_to_temp(cube, alg)
-        
-        # Rotate U to try to find matches
-        solution.append("U")
-        apply_virtual_move(cube, "U")
-        
-    return " ".join(solution)
+    rotate_z2(c)
+    for i in range(6): cube[i] = c[i]
+    return ' '.join(all_sol)
+
+
+# Step 6: Solve Yellow Corners
+
+def corner_set(cube, positions):
+    return {cube[f][i] for f,i in positions}
+
+def corners_positioned(cube):
+    slots = [
+        ([(0,0),(4,2),(1,0)], 0, 4, 1),
+        ([(0,2),(3,2),(4,0)], 0, 4, 3),
+        ([(0,6),(1,2),(2,0)], 0, 2, 1),
+        ([(0,8),(2,2),(3,0)], 0, 2, 3),
+    ]
+    return all(corner_set(cube, p) == {cube[f1][4], cube[f2][4], cube[f3][4]} for p, f1, f2, f3 in slots)
 
 def solve_yellow_corners(cube):
-    solution = []
+    c = copy_cube(cube)
+    all_sol = []
+    rotate_z2(c)
     
-    place_alg = "U R U' L' U R' U' L"
-    for _ in range(6):
-        solution.append(place_alg)
-        apply_sequence_to_temp(cube, place_alg)
+    place = "U R U' L' U R' U' L"
     
-    orient_alg = "R' D' R D" # Check for top 4
-    
-    for i in range(4):
-        # While the top-right corner is not Yellow
-        while cube[0][8] != 'Y':
-            solution.append(orient_alg)
-            apply_sequence_to_temp(cube, orient_alg)
+    for _ in range(20):
+        if corners_positioned(c): break
         
-        # Rotate U to get next corner
-        solution.append("U")
-        apply_virtual_move(cube, "U")
+        c_pos = -1
+        if corner_set(c, [(0,8),(2,2),(3,0)]) == {c[0][4], c[2][4], c[3][4]}: c_pos = 0
+        elif corner_set(c, [(0,2),(3,2),(4,0)]) == {c[0][4], c[3][4], c[4][4]}: c_pos = 1
+        elif corner_set(c, [(0,0),(4,2),(1,0)]) == {c[0][4], c[4][4], c[1][4]}: c_pos = 2
+        elif corner_set(c, [(0,6),(1,2),(2,0)]) == {c[0][4], c[1][4], c[2][4]}: c_pos = 3
+            
+        if c_pos != -1:
+            for _ in range(c_pos): apply_z2_alg(c, "U", all_sol)
+            apply_z2_alg(c, place, all_sol)
+            for _ in range((4 - c_pos) % 4): apply_z2_alg(c, "U", all_sol)
+        else:
+            apply_z2_alg(c, place, all_sol)
         
-    return " ".join(solution)
+    orient = "R' D' R D"
+    
+    for _ in range(4):
+        for __ in range(3):
+            if c[0][8] == YELLOW: break
+            apply_z2_alg(c, orient, all_sol)
+            apply_z2_alg(c, orient, all_sol)
+        apply_z2_alg(c, "U", all_sol)
+        
+    rotate_z2(c)
+    for i in range(6): cube[i] = c[i]
+    return ' '.join(all_sol)
+
+
+# Main Solver
 
 def solve_cube_logic(cube):
-    full_solution = []
+    # Returns the simplified final string of moves to solve the cube
+    c = copy_cube(cube)
+    parts = []
     
-    # 1. Solve Middle Layer
-    mid_sol = solve_second_layer(cube)
-    if mid_sol: full_solution.append(mid_sol)
+    s = solve_white_cross(c)
+    if s.strip(): parts.append(s)
     
-    # 2. Solve Yellow Cross
-    cross_sol = solve_yellow_cross(cube)
-    if cross_sol: full_solution.append(cross_sol)
+    s = solve_white_corners(c)
+    if s.strip(): parts.append(s)
     
-    # 3. Solve Yellow Edges
-    edge_sol = solve_yellow_edges(cube)
-    if edge_sol: full_solution.append(edge_sol)
+    s = solve_second_layer(c)
+    if s.strip(): parts.append(s)
     
-    # 4. Solve Yellow Corners
-    corner_sol = solve_yellow_corners(cube)
-    if corner_sol: full_solution.append(corner_sol)
+    s = solve_yellow_cross(c)
+    if s.strip(): parts.append(s)
     
-    return " ".join(full_solution)
+    s = solve_yellow_edges(c)
+    if s.strip(): parts.append(s)
+    
+    s = solve_yellow_corners(c)
+    if s.strip(): parts.append(s)
+    
+    sol_str = ' '.join(parts)
+    return simplify_moves(sol_str)
+
+# Reduce moves by simplifying redundant moves
+
+def simplify_moves(move_str):
+    if not move_str: return ""
+    
+    moves_list = move_str.split()
+    stack = []
+    
+    for m in moves_list:
+        face = m[0]
+        val = -1 if "'" in m else 1
+        
+        if stack and stack[-1][0] == face:
+            prev_face, prev_val = stack.pop()
+            new_val = (prev_val + val) % 4
+            if new_val != 0:
+                stack.append((face, new_val))
+        else:
+            stack.append((face, val % 4))
+            
+    res = []
+    for face, val in stack:
+        if val == 1: res.append(face)
+        elif val == 2: res.extend([face, face])
+        elif val == 3: res.append(face + "'")
+        
+    return " ".join(res)
