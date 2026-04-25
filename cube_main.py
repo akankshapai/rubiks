@@ -70,7 +70,7 @@ def main():
             break
 
         elif cmd.upper() == 'S':
-            solution = solver.solve_cube(cube)
+            solution = solver.solve_cube_logic(cube)
             print("Solver:", solution)
             apply_sequence(cube, solution)
 
