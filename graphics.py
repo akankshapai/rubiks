@@ -153,11 +153,13 @@ def input(key):
                 prime_map[move_str](logic_cube)
                 print(f"Turned {move_str}")
                 move_count += 1
+                Audio('sounds/meow.wav', autoplay=True)
         else:
             if move_code in move_map:
                 move_map[move_code](logic_cube)
                 print(f"Turned {move_code}")
                 move_count += 1
+                Audio('sounds/meow.wav', autoplay=True)
                 
         update_visuals()
 
