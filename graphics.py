@@ -47,15 +47,18 @@ def solve_cube():
     
     # Function to run animation in background
     def run_animation():
+        global move_count
         for move in moves_list:
             if held_keys['q']: break
             
             # Check for Prime moves
             if move in prime_map:
                 prime_map[move](logic_cube)
+                move_count += 1
             # Check for Standard moves
             elif move in move_map:
                 move_map[move](logic_cube)
+                move_count += 1
             
             update_visuals()
             time.sleep(0.3) 
